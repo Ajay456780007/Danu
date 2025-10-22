@@ -1,0 +1,50 @@
+import numpy as np
+
+def simulate_outage_capacity(Pt=1.0, N0=1e-9, B=1.0, R=1.0, M=50,
+                             num_iter=200000, avg_snr_linear=None):
+    # Pt: transmit power (W). N0: noise spectral density (W/Hz). B bandwidth (Hz).
+    # R: target rate (bits/s/Hz), M: number of RIS elements
+    # num_iter: Monte Carlo iterations
+    gamma_th = 2**R - 1
+
+    # Pathloss / average power scaling:
+    # For simple normalized Rayleigh example we set per-link variance so average SNR = avg_snr_linear
+    if avg_snr_linear is None:
+        avg_snr_linear = 10.0  # choose mean SNR (linear). Tune to your scenario.
+
+    # We'll model: h_d ~ CN(0, sigma_d^2), h_r_m ~ CN(0, sigma_r^2), g_m ~ CN(0, sigma_g^2)
+    sigma_d2 = 1.0
+    sigma_r2 = 1.0
+    sigma_g2 = 1.0
+
+    # scale to get desired average SNR: set Pt * E[|h_eff|^2] / (N0*B) ~= avg_snr_linear
+    # Rough approx: E[|h_eff|^2] ~= sigma_d2 + M * sigma_r2 * sigma_g2 (uncorrelated)
+    expected_h2 = sigma_d2 + M * sigma_r2 * sigma_g2
+    scale = (avg_snr_linear * N0 * B) / (Pt * expected_h2)
+    sigma_d2 *= scale
+    sigma_r2 *= scale
+    sigma_g2 *= scale
+
+    # Monte Carlo
+    gammas = np.zeros(num_iter)
+    for i in range(num_iter):
+        h_d = (np.sqrt(sigma_d2/2)*(np.random.randn() + 1j*np.random.randn()))
+        # RIS: generate product terms h_r_m * g_m
+        hr = (np.sqrt(sigma_r2/2)*(np.random.randn(M) + 1j*np.random.randn(M)))
+        gm = (np.sqrt(sigma_g2/2)*(np.random.randn(M) + 1j*np.random.randn(M)))
+        # choose phases phi_m to align all reflected components (coherent combining)
+        reflected = np.sum(hr * gm / np.abs(hr * gm) * np.abs(hr * gm))  # force phase alignment
+        h_eff = h_d + reflected
+        gamma = Pt * (np.abs(h_eff)**2) / (N0 * B)
+        gammas[i] = gamma
+
+    outage = np.mean(gammas < gamma_th)
+    ergodic_capacity = np.mean(np.log2(1 + gammas)) * B  # bits/s
+    avg_snr_emp = np.mean(gammas)
+
+    return {'outage': outage, 'ergodic_capacity_bps': ergodic_capacity, 'avg_snr': avg_snr_emp}
+
+# Example run:
+res = simulate_outage_capacity(Pt=1.0, N0=1e-9, B=1.0, R=1.0, M=60, num_iter=100000, avg_snr_linear=20)
+pr
+int(res)
